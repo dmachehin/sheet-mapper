@@ -52,6 +52,14 @@ $items = $mapper->map(__DIR__ . '/storage/items.xlsx', Item::class);
 foreach ($items as $item) {
     echo $item->name . ' => ' . $item->amount . PHP_EOL;
 }
+
+// Если данные уже загружены, можно передать массив строк:
+$rows = [
+    ['Name', 'Amount', 'Active'],
+    ['Apple', 10.5, true],
+];
+
+$items = $mapper->mapFromArray($rows, Item::class);
 ```
 
 ### Чтение без заголовков

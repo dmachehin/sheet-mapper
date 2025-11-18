@@ -37,25 +37,92 @@ class SheetMapper
 
         try {
             $worksheet = $this->resolveWorksheet($spreadsheet, $schema->target_sheet);
-            $header_data = $schema->has_header_row ? $this->buildHeaderMap($worksheet) : ['map' => [], 'raw' => []];
-            if ($schema->enforce_field_mapping) {
-                $this->validateFields($worksheet, $schema, $header_data);
-            }
-            $start_row = $schema->has_header_row ? 2 : 1;
-            $highest_row = $worksheet->getHighestRow();
-
-            $result = [];
-            for ($row = $start_row; $row <= $highest_row; $row++) {
-                if ($this->isRowEmpty($worksheet, $row, $schema, $header_data)) {
-                    continue;
-                }
-
-                $result[] = $this->hydrateObject($worksheet, $row, $schema, $header_data);
-            }
-
-            return $result;
+            return $this->mapWorksheet($worksheet, $schema);
         } finally {
             $spreadsheet->disconnectWorksheets();
+        }
+    }
+
+    /**
+     * @template T of object
+     *
+     * @param class-string<T> $class_name
+     * @param list<array<int|string, mixed>> $rows
+     * @return T[]
+     */
+    public function mapFromArray(array $rows, string $class_name): array
+    {
+        $schema = $this->schema_resolver->fromClass($class_name);
+        $spreadsheet = new Spreadsheet();
+
+        try {
+            $worksheet = $spreadsheet->getActiveSheet();
+            if ($schema->target_sheet !== null) {
+                $worksheet->setTitle($schema->target_sheet);
+            }
+
+            $this->populateWorksheet($worksheet, $rows);
+
+            return $this->mapWorksheet($worksheet, $schema);
+        } finally {
+            $spreadsheet->disconnectWorksheets();
+        }
+    }
+
+    /**
+     * @return list<object>
+     */
+    private function mapWorksheet(Worksheet $worksheet, ClassSchema $schema): array
+    {
+        $header_data = $schema->has_header_row
+            ? $this->buildHeaderMap($worksheet)
+            : ['map' => [], 'raw' => []];
+
+        if ($schema->enforce_field_mapping) {
+            $this->validateFields($worksheet, $schema, $header_data);
+        }
+
+        $start_row = $schema->has_header_row ? 2 : 1;
+        $highest_row = $worksheet->getHighestRow();
+
+        $result = [];
+        for ($row = $start_row; $row <= $highest_row; $row++) {
+            if ($this->isRowEmpty($worksheet, $row, $schema, $header_data)) {
+                continue;
+            }
+
+            $result[] = $this->hydrateObject($worksheet, $row, $schema, $header_data);
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param list<array<int|string, mixed>> $rows
+     */
+    private function populateWorksheet(Worksheet $worksheet, array $rows): void
+    {
+        foreach (array_values($rows) as $row_index => $row) {
+            if (!is_array($row)) {
+                throw new SheetMapperException(sprintf('Row at index %d must be an array.', $row_index));
+            }
+
+            $next_column_index = 0;
+            foreach ($row as $column_key => $value) {
+                if (is_int($column_key)) {
+                    if ($column_key < 0) {
+                        throw new SheetMapperException(sprintf('Column indexes must be 0 or greater (row %d).', $row_index));
+                    }
+                    $column_index = $column_key;
+                    $next_column_index = max($next_column_index, $column_index + 1);
+                } else {
+                    $column_index = $next_column_index;
+                    $next_column_index++;
+                }
+
+                $coordinate = Coordinate::stringFromColumnIndex($column_index + 1) . ($row_index + 1);
+                $worksheet->setCellValue($coordinate, $value);
+            }
         }
     }
 

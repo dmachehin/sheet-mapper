@@ -47,6 +47,23 @@ class MapperTest extends TestCase
         self::assertFalse($items[1]->active);
     }
 
+    public function testMapFromArrayWithHeaders(): void
+    {
+        $rows = [
+            ['Name', 'Amount', 'Active'],
+            ['Apple', '10.5', 'true'],
+            ['Pear', '7', 'false'],
+        ];
+
+        $mapper = new SheetMapper();
+        $items = $mapper->mapFromArray($rows, CsvItem::class);
+
+        self::assertCount(2, $items);
+        self::assertSame('Apple', $items[0]->name);
+        self::assertSame(10.5, $items[0]->amount);
+        self::assertFalse($items[1]->active);
+    }
+
     public function testMapsXlsxWithColumnIndexesAndDates(): void
     {
         $first = new DateTimeImmutable('2024-01-01 12:34:56');
@@ -61,6 +78,26 @@ class MapperTest extends TestCase
         $items = $mapper->map($file, ColumnItem::class);
 
         self::assertCount(2, $items);
+        self::assertInstanceOf(DateTimeImmutable::class, $items[0]->purchasedAt);
+        self::assertSame($first->format(DATE_ATOM), $items[0]->purchasedAt->format(DATE_ATOM));
+        self::assertSame($second->format(DATE_ATOM), $items[1]->purchasedAt->format(DATE_ATOM));
+    }
+
+    public function testMapFromArrayWithoutHeaders(): void
+    {
+        $first = new DateTimeImmutable('2024-01-01 12:34:56');
+        $second = new DateTimeImmutable('2024-02-03 08:00:00');
+
+        $rows = [
+            ['Orange', $first->format('Y-m-d H:i:s')],
+            ['Banana', $second->format('Y-m-d H:i:s')],
+        ];
+
+        $mapper = new SheetMapper();
+        $items = $mapper->mapFromArray($rows, ColumnItem::class);
+
+        self::assertCount(2, $items);
+        self::assertSame('Orange', $items[0]->name);
         self::assertInstanceOf(DateTimeImmutable::class, $items[0]->purchasedAt);
         self::assertSame($first->format(DATE_ATOM), $items[0]->purchasedAt->format(DATE_ATOM));
         self::assertSame($second->format(DATE_ATOM), $items[1]->purchasedAt->format(DATE_ATOM));
@@ -161,7 +198,7 @@ class MapperTest extends TestCase
         $handle = fopen($file, 'w');
 
         foreach ($rows as $row) {
-            fputcsv($handle, $row);
+            fputcsv($handle, $row, ',', '"', '\\');
         }
 
         fclose($handle);
