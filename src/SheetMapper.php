@@ -201,7 +201,8 @@ class SheetMapper
             }
             $raw_value = $this->readCellValue($worksheet, $row, $column_index);
             $this->assertValueMatchesPattern($raw_value, $field);
-            $value = $this->castValue($raw_value, $field);
+            $processed_value = $this->applyValueCallback($raw_value, $field);
+            $value = $this->castValue($processed_value, $field);
             $this->assignValue($object, $field, $value);
         }
 
@@ -411,6 +412,32 @@ class SheetMapper
     private function normalizeHeader(string $value): string
     {
         return strtolower(trim($value));
+    }
+
+    private function applyValueCallback(mixed $value, FieldDefinition $field): mixed
+    {
+        $callback = $field->value_callback;
+        if ($callback === null) {
+            return $value;
+        }
+
+        if (!is_callable($callback)) {
+            throw new SheetMapperException(sprintf('Value callback configured on field "%s" is not callable.', $field->property));
+        }
+
+        try {
+            if (!$callback instanceof \Closure) {
+                $callback = \Closure::fromCallable($callback);
+            }
+
+            return $callback($value);
+        } catch (\Throwable $exception) {
+            throw new SheetMapperException(sprintf(
+                'Value callback failed for field "%s": %s',
+                $field->property,
+                $exception->getMessage(),
+            ), previous: $exception);
+        }
     }
 
     private function castValue(mixed $value, FieldDefinition $field): mixed

@@ -9,6 +9,7 @@ PHP библиотека, которая превращает строки CSV/X
 - `#[SheetField]` на свойствах задаёт номер колонки (с нуля) либо имя заголовка.
 - Поиск колонок по регулярным выражениям: `header_regexp` помогает, если заголовки динамические.
 - Опциональная проверка значений по регулярному выражению через `value_regexp`.
+- Кастомные преобразования значений перед приведением типов через `value_callback`.
 - Проверка структуры листа: `enforce_field_mapping=true` гарантирет наличие всех обязательных колонок/заголовков, а `ignored_columns` позволяет пометить опциональные (по индексу колонки или имени заголовка).
 - Автоматическое приведение типов для `string`, `int`, `float`, `bool`, а также `DateTimeInterface` и enum.
 - Пропуск полностью пустых строк и понятные исключения, если значения отсутствуют или заголовок не найден.
@@ -129,3 +130,26 @@ class ValueItem
 ```
 
 `value_regexp` проверяет каждое непустое значение и выбрасывает `SheetMapperException`, если оно не совпало с шаблоном.
+
+### Кастомные преобразования значений
+
+Если стандартного приведения типов недостаточно, используйте `value_callback` — он получает исходное значение ячейки и должен вернуть преобразованный результат (подойдёт любая callable: `'trim'`, `['ClassName', 'method']` и т.п.).
+
+```php
+final class FieldCallbacks
+{
+    public static function ruYesNoToBool(mixed $value): bool
+    {
+        return strtolower(trim((string) $value)) === 'да';
+    }
+}
+
+#[SheetMapping(has_header_row: true)]
+class CallbackItem
+{
+    #[SheetField(header: 'Active', value_callback: [FieldCallbacks::class, 'ruYesNoToBool'])]
+    public bool $active;
+}
+```
+
+При ошибке внутри callback будет выброшено `SheetMapperException`, так что можно смело кидать собственные исключения с пояснениями.

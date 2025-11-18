@@ -189,6 +189,35 @@ class MapperTest extends TestCase
         $mapper->map($file, ValueRegexItem::class);
     }
 
+    public function testValueCallbackTransformsValues(): void
+    {
+        $rows = [
+            ['Flag'],
+            ['ДА'],
+            ['нет'],
+        ];
+
+        $mapper = new SheetMapper();
+        $items = $mapper->mapFromArray($rows, CallbackItem::class);
+
+        self::assertCount(2, $items);
+        self::assertTrue($items[0]->flag);
+        self::assertFalse($items[1]->flag);
+    }
+
+    public function testValueCallbackExceptionsAreWrapped(): void
+    {
+        $rows = [
+            ['Flag'],
+            ['boom'],
+        ];
+
+        $mapper = new SheetMapper();
+        $this->expectException(SheetMapperException::class);
+        $this->expectExceptionMessage('Value callback failed');
+        $mapper->mapFromArray($rows, CallbackFailureItem::class);
+    }
+
     /**
      * @param list<list<string>> $rows
      */
@@ -306,6 +335,42 @@ class ValueRegexItem
 {
     #[SheetField(header: 'Code', value_regexp: '/^[A-Z]{3}-\d{3}$/')]
     public string $code;
+}
+
+#[SheetMapping(has_header_row: true)]
+class CallbackItem
+{
+    #[SheetField(header: 'Flag', value_callback: [FieldValueCallbacks::class, 'ruYesNoToBool'])]
+    public bool $flag;
+}
+
+#[SheetMapping(has_header_row: true)]
+class CallbackFailureItem
+{
+    #[SheetField(header: 'Flag', value_callback: [FieldValueCallbacks::class, 'explode'])]
+    public bool $flag;
+}
+
+class FieldValueCallbacks
+{
+    public static function ruYesNoToBool(mixed $value): bool
+    {
+        if ($value === null) {
+            return false;
+        }
+
+        $string_value = trim((string) $value);
+        $normalized = function_exists('mb_strtolower')
+            ? mb_strtolower($string_value)
+            : strtolower($string_value);
+
+        return $normalized === 'да';
+    }
+
+    public static function explode(mixed $value): bool
+    {
+        throw new \RuntimeException('boom');
+    }
 }
 
 enum ItemType: string

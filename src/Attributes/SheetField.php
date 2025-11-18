@@ -13,6 +13,10 @@ class SheetField
         public readonly ?string $header = null,
         public readonly ?string $header_regexp = null,
         public readonly ?string $value_regexp = null,
+        /**
+         * @var callable|null
+         */
+        public readonly mixed $value_callback = null,
     ) {
         if ($column === null && ($header === null || $header === '') && ($header_regexp === null || $header_regexp === '')) {
             throw new SheetMapperException('Provide either column index, header value, or header_regexp for SheetField.');
@@ -25,6 +29,9 @@ class SheetField
         }
         if ($value_regexp !== null && $value_regexp !== '') {
             $this->assertValidPattern($value_regexp, 'value_regexp');
+        }
+        if ($value_callback !== null && !is_callable($value_callback)) {
+            throw new SheetMapperException('Value callback must be a valid callable reference.');
         }
     }
 

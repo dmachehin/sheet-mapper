@@ -13,6 +13,10 @@ class FieldDefinition
         public readonly ReflectionProperty $reflection_property,
         public readonly ?string $header_regexp,
         public readonly ?string $value_regexp,
+        /**
+         * @var callable|null
+         */
+        public readonly mixed $value_callback,
     ) {
     }
 }

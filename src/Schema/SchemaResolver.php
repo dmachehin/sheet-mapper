@@ -49,6 +49,7 @@ class SchemaResolver
                 reflection_property: $property,
                 header_regexp: $header_regexp,
                 value_regexp: $value_regexp,
+                value_callback: $attribute->value_callback,
             );
         }
 
