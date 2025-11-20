@@ -218,6 +218,21 @@ class MapperTest extends TestCase
         $mapper->mapFromArray($rows, CallbackFailureItem::class);
     }
 
+    public function testConstructorPromotedPropertiesAreHydrated(): void
+    {
+        $rows = [
+            ['Name', 'Amount'],
+            ['Apple', '42'],
+        ];
+
+        $mapper = new SheetMapper();
+        $items = $mapper->mapFromArray($rows, PromotedConstructorItem::class);
+
+        self::assertCount(1, $items);
+        self::assertSame('Apple', $items[0]->name);
+        self::assertSame(42, $items[0]->amount);
+    }
+
     /**
      * @param list<list<string>> $rows
      */
@@ -349,6 +364,18 @@ class CallbackFailureItem
 {
     #[SheetField(header: 'Flag', value_callback: [FieldValueCallbacks::class, 'explode'])]
     public bool $flag;
+}
+
+#[SheetMapping(has_header_row: true)]
+class PromotedConstructorItem
+{
+    public function __construct(
+        #[SheetField(header: 'Name')]
+        public readonly string $name,
+        #[SheetField(header: 'Amount')]
+        public readonly int $amount,
+    ) {
+    }
 }
 
 class FieldValueCallbacks

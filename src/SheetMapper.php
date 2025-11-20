@@ -192,21 +192,109 @@ class SheetMapper
     {
         /** @var class-string $class_name */
         $class_name = $schema->class_name;
-        $object = new $class_name();
+
+        $field_values = [];
 
         foreach ($schema->fields as $field) {
             $column_index = $this->resolveColumnIndex($field, $header_data, $schema);
             if ($column_index === null) {
                 continue;
             }
+
             $raw_value = $this->readCellValue($worksheet, $row, $column_index);
             $this->assertValueMatchesPattern($raw_value, $field);
             $processed_value = $this->applyValueCallback($raw_value, $field);
             $value = $this->castValue($processed_value, $field);
-            $this->assignValue($object, $field, $value);
+            $field_values[$field->property] = $value;
+        }
+
+        $object = $this->hasPromotedFields($schema)
+            ? $this->instantiateWithConstructorPromotion($class_name, $field_values)
+            : new $class_name();
+
+        foreach ($schema->fields as $field) {
+            if (!array_key_exists($field->property, $field_values)) {
+                continue;
+            }
+
+            if ($field->reflection_property->isPromoted()) {
+                continue;
+            }
+
+            $this->assignValue($object, $field, $field_values[$field->property]);
         }
 
         return $object;
+    }
+
+    private function hasPromotedFields(ClassSchema $schema): bool
+    {
+        foreach ($schema->fields as $field) {
+            if ($field->reflection_property->isPromoted()) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param class-string $class_name
+     * @param array<string, mixed> $field_values
+     */
+    private function instantiateWithConstructorPromotion(string $class_name, array $field_values): object
+    {
+        $class = new \ReflectionClass($class_name);
+        $constructor = $class->getConstructor();
+
+        if ($constructor === null) {
+            return $class->newInstance();
+        }
+
+        $args = [];
+        foreach ($constructor->getParameters() as $parameter) {
+            if ($parameter->isPromoted()) {
+                $property_name = $parameter->getName();
+                if (array_key_exists($property_name, $field_values)) {
+                    $args[] = $field_values[$property_name];
+                    continue;
+                }
+
+                if ($parameter->isDefaultValueAvailable()) {
+                    $args[] = $parameter->getDefaultValue();
+                    continue;
+                }
+
+                if ($parameter->allowsNull()) {
+                    $args[] = null;
+                    continue;
+                }
+
+                throw new SheetMapperException(sprintf(
+                    'Unable to resolve value for promoted property "%s" on "%s".',
+                    $property_name,
+                    $class_name,
+                ));
+            }
+
+            if ($parameter->isDefaultValueAvailable()) {
+                $args[] = $parameter->getDefaultValue();
+                continue;
+            }
+
+            if ($parameter->allowsNull()) {
+                $args[] = null;
+                continue;
+            }
+
+            throw new SheetMapperException(sprintf(
+                'Cannot instantiate "%s": constructor parameter "$%s" has no mapped value.',
+                $class_name,
+                $parameter->getName(),
+            ));
+        }
+
+        return $class->newInstanceArgs($args);
     }
 
     /**
