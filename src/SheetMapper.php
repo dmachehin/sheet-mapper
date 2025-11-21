@@ -532,7 +532,7 @@ class SheetMapper
     {
         $type = $field->reflection_property->getType();
 
-        if ($value === null || $value === '') {
+        if ($value === null/* || $value === ''*/) {
             if ($type !== null && !$type->allowsNull()) {
                 throw new SheetMapperException(sprintf('Field "%s" is not nullable but cell is empty.', $field->property));
             }
