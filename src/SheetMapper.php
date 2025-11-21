@@ -548,23 +548,62 @@ class SheetMapper
             throw new SheetMapperException(sprintf('Union types are not supported for field "%s".', $field->property));
         }
 
-        if ($type instanceof \ReflectionNamedType) {
-            $type_name = $type->getName();
+        if (!$type instanceof \ReflectionNamedType) {
+            return $value;
+        }
 
-            if ($type->isBuiltin()) {
-                return $this->castToBuiltin($value, $type_name, $field);
-            }
+        $type_name = $type->getName();
 
-            if (enum_exists($type_name)) {
-                return $this->castToEnum($value, $type_name, $field);
-            }
+        if ($type->isBuiltin()) {
+            return $this->castToBuiltin($value, $type_name, $field);
+        }
 
-            if (is_a($type_name, \DateTimeInterface::class, true)) {
-                return $this->castToDateTime($value, $type_name, $field);
-            }
+        $resolved_type_name = $this->resolveNamedType($type_name, $field);
+        $is_enum = enum_exists($resolved_type_name);
+
+        if (!$is_enum
+            && !class_exists($resolved_type_name)
+            && !interface_exists($resolved_type_name)
+        ) {
+            throw new SheetMapperException(sprintf(
+                'Type "%s" was not found for field "%s".',
+                $resolved_type_name,
+                $field->property,
+            ));
+        }
+
+        if ($is_enum) {
+            return $this->castToEnum($value, $resolved_type_name, $field);
+        }
+
+        if (is_a($resolved_type_name, \DateTimeInterface::class, true)) {
+            return $this->castToDateTime($value, $resolved_type_name, $field);
         }
 
         return $value;
+    }
+
+    private function resolveNamedType(string $type_name, FieldDefinition $field): string
+    {
+        return match ($type_name) {
+            'self', 'static' => $field->reflection_property->getDeclaringClass()->getName(),
+            'parent' => $this->resolveParentType($field),
+            default => $type_name,
+        };
+    }
+
+    private function resolveParentType(FieldDefinition $field): string
+    {
+        $parent = $field->reflection_property->getDeclaringClass()->getParentClass();
+        if ($parent === false) {
+            throw new SheetMapperException(sprintf(
+                'Field "%s" references parent type but "%s" does not have a parent class.',
+                $field->property,
+                $field->reflection_property->getDeclaringClass()->getName(),
+            ));
+        }
+
+        return $parent->getName();
     }
 
     /**

@@ -162,6 +162,21 @@ class MapperTest extends TestCase
         self::assertSame(ItemState::Draft, $items[1]->state);
     }
 
+    public function testEnumClassNotFoundThrows(): void
+    {
+        $rows = [
+            ['Item type'],
+            ['fruit'],
+        ];
+
+        $mapper = new SheetMapper();
+
+        $this->expectException(SheetMapperException::class);
+        $this->expectExceptionMessage('Type "SheetMapper\\Tests\\UnknownClassName" was not found for field "item_type".');
+
+        $mapper->mapFromArray($rows, NotFoundEnumClass::class);
+    }
+
     public function testValueRegexpValidatesValues(): void
     {
         $file = $this->createCsvFile([
@@ -221,8 +236,8 @@ class MapperTest extends TestCase
     public function testConstructorPromotedPropertiesAreHydrated(): void
     {
         $rows = [
-            ['Name', 'Amount'],
-            ['Apple', '42'],
+            ['Name', 'Amount', 'Item type'],
+            ['Apple', '42', 'fruit'],
         ];
 
         $mapper = new SheetMapper();
@@ -231,6 +246,7 @@ class MapperTest extends TestCase
         self::assertCount(1, $items);
         self::assertSame('Apple', $items[0]->name);
         self::assertSame(42, $items[0]->amount);
+        self::assertSame(ItemType::Fruit, $items[0]->item_type);
     }
 
     /**
@@ -371,9 +387,23 @@ class PromotedConstructorItem
 {
     public function __construct(
         #[SheetField(header: 'Name')]
-        public readonly string $name,
+        public string $name,
+
         #[SheetField(header: 'Amount')]
-        public readonly int $amount,
+        public int $amount,
+
+        #[SheetField(header: 'Item type')]
+        public ItemType $item_type,
+    ) {
+    }
+}
+
+#[SheetMapping(has_header_row: true)]
+class NotFoundEnumClass
+{
+    public function __construct(
+        #[SheetField(header: 'Item type')]
+        public UnknownClassName $item_type,
     ) {
     }
 }
