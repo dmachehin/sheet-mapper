@@ -28,6 +28,7 @@
     "phpoffice/phpspreadsheet": "3.*|4.*|5.*"
   },
   "require-dev": {
-    "phpunit/phpunit": "12.*"
+    "phpunit/phpunit": "12.*",
+    "phpstan/phpstan": "^2.1"
   }
 }

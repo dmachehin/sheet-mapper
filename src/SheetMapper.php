@@ -37,7 +37,7 @@ class SheetMapper
 
         try {
             $worksheet = $this->resolveWorksheet($spreadsheet, $schema->target_sheet);
-            return $this->mapWorksheet($worksheet, $schema);
+            return $this->mapWorksheet($worksheet, $schema, $class_name);
         } finally {
             $spreadsheet->disconnectWorksheets();
         }
@@ -63,16 +63,19 @@ class SheetMapper
 
             $this->populateWorksheet($worksheet, $rows);
 
-            return $this->mapWorksheet($worksheet, $schema);
+            return $this->mapWorksheet($worksheet, $schema, $class_name);
         } finally {
             $spreadsheet->disconnectWorksheets();
         }
     }
 
     /**
-     * @return list<object>
+     * @template T of object
+     *
+     * @param class-string<T> $class_name
+     * @return list<T>
      */
-    private function mapWorksheet(Worksheet $worksheet, ClassSchema $schema): array
+    private function mapWorksheet(Worksheet $worksheet, ClassSchema $schema, string $class_name): array
     {
         $header_data = $schema->has_header_row
             ? $this->buildHeaderMap($worksheet)
@@ -91,14 +94,14 @@ class SheetMapper
                 continue;
             }
 
-            $result[] = $this->hydrateObject($worksheet, $row, $schema, $header_data);
+            $result[] = $this->hydrateObject($worksheet, $row, $schema, $header_data, $class_name);
         }
 
         return $result;
     }
 
     /**
-     * @param list<array<int|string, mixed>> $rows
+     * @param array<array> $rows
      */
     private function populateWorksheet(Worksheet $worksheet, array $rows): void
     {
@@ -151,7 +154,7 @@ class SheetMapper
 
         for ($column = 1; $column <= $max_column; $column++) {
             $coordinate = Coordinate::stringFromColumnIndex($column) . '1';
-            $value = $worksheet->getCell($coordinate)?->getValue();
+            $value = $worksheet->getCell($coordinate)->getValue();
             if ($value === null || $value === '') {
                 continue;
             }
@@ -187,12 +190,10 @@ class SheetMapper
 
     /**
      * @param array{map: array<string, int>, raw: array<int, string>} $header_data
+     * @param class-string $class_name
      */
-    private function hydrateObject(Worksheet $worksheet, int $row, ClassSchema $schema, array $header_data): object
+    private function hydrateObject(Worksheet $worksheet, int $row, ClassSchema $schema, array $header_data, string $class_name): object
     {
-        /** @var class-string $class_name */
-        $class_name = $schema->class_name;
-
         $field_values = [];
 
         foreach ($schema->fields as $field) {
@@ -302,8 +303,8 @@ class SheetMapper
      */
     private function resolveColumnIndex(FieldDefinition $field, array $header_data, ClassSchema $schema): ?int
     {
-        $header_map = $header_data['map'] ?? [];
-        $raw_headers = $header_data['raw'] ?? [];
+        $header_map = $header_data['map'];
+        $raw_headers = $header_data['raw'];
 
         if ($field->column !== null) {
             return $field->column;
@@ -353,8 +354,8 @@ class SheetMapper
     private function validateFields(Worksheet $worksheet, ClassSchema $schema, array $header_data): void
     {
         $max_column_index = Coordinate::columnIndexFromString($worksheet->getHighestColumn()) - 1;
-        $header_map = $header_data['map'] ?? [];
-        $raw_headers = $header_data['raw'] ?? [];
+        $header_map = $header_data['map'];
+        $raw_headers = $header_data['raw'];
 
         foreach ($schema->fields as $field) {
             if ($this->isFieldSkipped($field, $schema)) {
@@ -494,7 +495,7 @@ class SheetMapper
         $coordinate = Coordinate::stringFromColumnIndex($column_index + 1) . $row;
         $cell = $worksheet->getCell($coordinate);
 
-        return $cell?->getCalculatedValue();
+        return $cell->getCalculatedValue();
     }
 
     private function normalizeHeader(string $value): string

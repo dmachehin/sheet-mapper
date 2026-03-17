@@ -64,6 +64,22 @@ class MapperTest extends TestCase
         self::assertFalse($items[1]->active);
     }
 
+    public function testMapFromArrayWithHeadersUsingExtendItem(): void
+    {
+        $rows = [
+            ['id', 'text'],
+            ['3463', 'text'],
+            ['54754', 'text2'],
+        ];
+
+        $mapper = new SheetMapper();
+        $items = $mapper->mapFromArray($rows, ExtendItem::class);
+
+        self::assertCount(2, $items);
+        self::assertSame(3463, $items[0]->id);
+        self::assertSame('text', $items[0]->text);
+    }
+
     public function testMapsXlsxWithColumnIndexesAndDates(): void
     {
         $first = new DateTimeImmutable('2024-01-01 12:34:56');
@@ -440,4 +456,17 @@ enum ItemState
 {
     case Draft;
     case Published;
+}
+
+#[SheetMapping(has_header_row: true, enforce_field_mapping: true)]
+readonly class ExtendItem extends AbstractItem
+{
+    #[SheetField(header: 'text')]
+    public string $text;
+}
+
+abstract readonly class AbstractItem
+{
+    #[SheetField(header: 'id')]
+    public int $id;
 }
