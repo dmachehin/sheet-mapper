@@ -356,6 +356,7 @@ class SheetMapper
         $max_column_index = Coordinate::columnIndexFromString($worksheet->getHighestColumn()) - 1;
         $header_map = $header_data['map'];
         $raw_headers = $header_data['raw'];
+        $mapped_columns = [];
 
         foreach ($schema->fields as $field) {
             if ($this->isFieldSkipped($field, $schema)) {
@@ -371,11 +372,13 @@ class SheetMapper
                     ));
                 }
 
+                $mapped_columns[$field->column] = true;
                 continue;
             }
 
             if ($field->header_regexp !== null) {
-                if ($this->findHeaderByPattern($field->header_regexp, $raw_headers) === null) {
+                $column = $this->findHeaderByPattern($field->header_regexp, $raw_headers);
+                if ($column === null) {
                     throw new SheetMapperException(sprintf(
                         'Header matching pattern "%s" for field "%s" was not found.',
                         $field->header_regexp,
@@ -383,6 +386,7 @@ class SheetMapper
                     ));
                 }
 
+                $mapped_columns[$column] = true;
                 continue;
             }
 
@@ -399,6 +403,27 @@ class SheetMapper
             if (!array_key_exists($normalized, $header_map)) {
                 throw new SheetMapperException(sprintf('Header "%s" for field "%s" was not found.', $header, $field->property));
             }
+
+            $mapped_columns[$header_map[$normalized]] = true;
+        }
+
+        for ($column_index = 0; $column_index <= $max_column_index; $column_index++) {
+            if (!$this->columnHasAnyValue($worksheet, $column_index)) {
+                continue;
+            }
+
+            if (isset($mapped_columns[$column_index])) {
+                continue;
+            }
+
+            if ($this->isColumnIgnored($schema, $column_index, $raw_headers[$column_index] ?? null)) {
+                continue;
+            }
+
+            throw new SheetMapperException(sprintf(
+                'Column index %d was not mapped to any field.',
+                $column_index,
+            ));
         }
     }
 
@@ -436,6 +461,40 @@ class SheetMapper
                 if ($this->normalizeHeader($skip) === $this->normalizeHeader($field_header)) {
                     return true;
                 }
+            }
+        }
+
+        return false;
+    }
+
+    private function isColumnIgnored(ClassSchema $schema, int $column_index, ?string $header): bool
+    {
+        if ($schema->ignored_columns === []) {
+            return false;
+        }
+
+        foreach ($schema->ignored_columns as $skip) {
+            if (is_int($skip) && $skip === $column_index) {
+                return true;
+            }
+
+            if (is_string($skip) && $header !== null && $this->normalizeHeader($skip) === $this->normalizeHeader($header)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function columnHasAnyValue(Worksheet $worksheet, int $column_index): bool
+    {
+        $column_letter = Coordinate::stringFromColumnIndex($column_index + 1);
+        $highest_row = $worksheet->getHighestRow();
+
+        for ($row = 1; $row <= $highest_row; $row++) {
+            $value = $worksheet->getCell($column_letter . $row)->getValue();
+            if ($value !== null && $value !== '') {
+                return true;
             }
         }
 

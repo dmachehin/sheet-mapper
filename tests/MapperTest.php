@@ -131,6 +131,19 @@ class MapperTest extends TestCase
         $mapper->map($file, MissingColumnItem::class);
     }
 
+    public function testValidateFieldsMissingColumnThrowsExtend(): void
+    {
+        $file = $this->createCsvFile([
+            ['text', 'id', 'unknown'],
+            ['text', '456', '123'],
+        ]);
+
+        $mapper = new SheetMapper();
+        $this->expectException(SheetMapperException::class);
+        $this->expectExceptionMessage('Column index 2');
+        $mapper->map($file, ExtendItem::class);
+    }
+
     public function testValidateFieldsSkipAllowsMissingHeader(): void
     {
         $file = $this->createCsvFile([
