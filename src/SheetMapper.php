@@ -37,7 +37,7 @@ class SheetMapper
 
         try {
             $worksheet = $this->resolveWorksheet($spreadsheet, $schema->target_sheet);
-            return $this->mapWorksheet($worksheet, $schema, $class_name);
+            return $this->mapWorksheet($worksheet, $schema);
         } finally {
             $spreadsheet->disconnectWorksheets();
         }
@@ -63,19 +63,16 @@ class SheetMapper
 
             $this->populateWorksheet($worksheet, $rows);
 
-            return $this->mapWorksheet($worksheet, $schema, $class_name);
+            return $this->mapWorksheet($worksheet, $schema);
         } finally {
             $spreadsheet->disconnectWorksheets();
         }
     }
 
     /**
-     * @template T of object
-     *
-     * @param class-string<T> $class_name
-     * @return list<T>
+     * @return list<object>
      */
-    private function mapWorksheet(Worksheet $worksheet, ClassSchema $schema, string $class_name): array
+    private function mapWorksheet(Worksheet $worksheet, ClassSchema $schema): array
     {
         $header_data = $schema->has_header_row
             ? $this->buildHeaderMap($worksheet)
@@ -94,14 +91,14 @@ class SheetMapper
                 continue;
             }
 
-            $result[] = $this->hydrateObject($worksheet, $row, $schema, $header_data, $class_name);
+            $result[] = $this->hydrateObject($worksheet, $row, $schema, $header_data);
         }
 
         return $result;
     }
 
     /**
-     * @param array<array> $rows
+     * @param list<array<int|string, mixed>> $rows
      */
     private function populateWorksheet(Worksheet $worksheet, array $rows): void
     {
@@ -154,7 +151,7 @@ class SheetMapper
 
         for ($column = 1; $column <= $max_column; $column++) {
             $coordinate = Coordinate::stringFromColumnIndex($column) . '1';
-            $value = $worksheet->getCell($coordinate)->getValue();
+            $value = $worksheet->getCell($coordinate)?->getValue();
             if ($value === null || $value === '') {
                 continue;
             }
@@ -190,10 +187,12 @@ class SheetMapper
 
     /**
      * @param array{map: array<string, int>, raw: array<int, string>} $header_data
-     * @param class-string $class_name
      */
-    private function hydrateObject(Worksheet $worksheet, int $row, ClassSchema $schema, array $header_data, string $class_name): object
+    private function hydrateObject(Worksheet $worksheet, int $row, ClassSchema $schema, array $header_data): object
     {
+        /** @var class-string $class_name */
+        $class_name = $schema->class_name;
+
         $field_values = [];
 
         foreach ($schema->fields as $field) {
@@ -303,8 +302,8 @@ class SheetMapper
      */
     private function resolveColumnIndex(FieldDefinition $field, array $header_data, ClassSchema $schema): ?int
     {
-        $header_map = $header_data['map'];
-        $raw_headers = $header_data['raw'];
+        $header_map = $header_data['map'] ?? [];
+        $raw_headers = $header_data['raw'] ?? [];
 
         if ($field->column !== null) {
             return $field->column;
@@ -354,9 +353,8 @@ class SheetMapper
     private function validateFields(Worksheet $worksheet, ClassSchema $schema, array $header_data): void
     {
         $max_column_index = Coordinate::columnIndexFromString($worksheet->getHighestColumn()) - 1;
-        $header_map = $header_data['map'];
-        $raw_headers = $header_data['raw'];
-        $mapped_columns = [];
+        $header_map = $header_data['map'] ?? [];
+        $raw_headers = $header_data['raw'] ?? [];
 
         foreach ($schema->fields as $field) {
             if ($this->isFieldSkipped($field, $schema)) {
@@ -372,13 +370,11 @@ class SheetMapper
                     ));
                 }
 
-                $mapped_columns[$field->column] = true;
                 continue;
             }
 
             if ($field->header_regexp !== null) {
-                $column = $this->findHeaderByPattern($field->header_regexp, $raw_headers);
-                if ($column === null) {
+                if ($this->findHeaderByPattern($field->header_regexp, $raw_headers) === null) {
                     throw new SheetMapperException(sprintf(
                         'Header matching pattern "%s" for field "%s" was not found.',
                         $field->header_regexp,
@@ -386,7 +382,6 @@ class SheetMapper
                     ));
                 }
 
-                $mapped_columns[$column] = true;
                 continue;
             }
 
@@ -403,28 +398,9 @@ class SheetMapper
             if (!array_key_exists($normalized, $header_map)) {
                 throw new SheetMapperException(sprintf('Header "%s" for field "%s" was not found.', $header, $field->property));
             }
-
-            $mapped_columns[$header_map[$normalized]] = true;
         }
 
-        for ($column_index = 0; $column_index <= $max_column_index; $column_index++) {
-            if (!$this->columnHasAnyValue($worksheet, $column_index)) {
-                continue;
-            }
-
-            if (isset($mapped_columns[$column_index])) {
-                continue;
-            }
-
-            if ($this->isColumnIgnored($schema, $column_index, $raw_headers[$column_index] ?? null)) {
-                continue;
-            }
-
-            throw new SheetMapperException(sprintf(
-                'Column index %d was not mapped to any field.',
-                $column_index,
-            ));
-        }
+        $this->validateUnexpectedHeaders($schema, $raw_headers);
     }
 
     /**
@@ -467,33 +443,68 @@ class SheetMapper
         return false;
     }
 
-    private function isColumnIgnored(ClassSchema $schema, int $column_index, ?string $header): bool
+    /**
+     * @param array<int, string> $raw_headers
+     */
+    private function validateUnexpectedHeaders(ClassSchema $schema, array $raw_headers): void
     {
-        if ($schema->ignored_columns === []) {
-            return false;
+        if (!$schema->has_header_row || $raw_headers === []) {
+            return;
         }
 
+        $mapped_columns = [];
+        foreach ($schema->fields as $field) {
+            if ($field->column !== null) {
+                $mapped_columns[$field->column] = true;
+                continue;
+            }
+
+            foreach ($raw_headers as $column_index => $raw_header) {
+                if ($field->header_regexp !== null) {
+                    $match = @preg_match($field->header_regexp, $raw_header);
+                    if ($match === false) {
+                        throw new SheetMapperException(sprintf('Invalid header_regexp "%s".', $field->header_regexp));
+                    }
+
+                    if ($match === 1) {
+                        $mapped_columns[$column_index] = true;
+                    }
+
+                    continue;
+                }
+
+                $header = $this->resolveHeaderName($field);
+                if ($this->normalizeHeader($raw_header) === $this->normalizeHeader($header)) {
+                    $mapped_columns[$column_index] = true;
+                }
+            }
+        }
+
+        foreach ($raw_headers as $column_index => $raw_header) {
+            if (isset($mapped_columns[$column_index])) {
+                continue;
+            }
+
+            if ($this->isColumnIgnored($column_index, $raw_header, $schema)) {
+                continue;
+            }
+
+            throw new SheetMapperException(sprintf(
+                'Unexpected header "%s" at column index %d.',
+                $raw_header,
+                $column_index,
+            ));
+        }
+    }
+
+    private function isColumnIgnored(int $column_index, string $raw_header, ClassSchema $schema): bool
+    {
         foreach ($schema->ignored_columns as $skip) {
             if (is_int($skip) && $skip === $column_index) {
                 return true;
             }
 
-            if (is_string($skip) && $header !== null && $this->normalizeHeader($skip) === $this->normalizeHeader($header)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private function columnHasAnyValue(Worksheet $worksheet, int $column_index): bool
-    {
-        $column_letter = Coordinate::stringFromColumnIndex($column_index + 1);
-        $highest_row = $worksheet->getHighestRow();
-
-        for ($row = 1; $row <= $highest_row; $row++) {
-            $value = $worksheet->getCell($column_letter . $row)->getValue();
-            if ($value !== null && $value !== '') {
+            if (is_string($skip) && $this->normalizeHeader($skip) === $this->normalizeHeader($raw_header)) {
                 return true;
             }
         }
@@ -554,7 +565,7 @@ class SheetMapper
         $coordinate = Coordinate::stringFromColumnIndex($column_index + 1) . $row;
         $cell = $worksheet->getCell($coordinate);
 
-        return $cell->getCalculatedValue();
+        return $cell?->getCalculatedValue();
     }
 
     private function normalizeHeader(string $value): string

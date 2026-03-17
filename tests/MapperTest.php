@@ -64,22 +64,6 @@ class MapperTest extends TestCase
         self::assertFalse($items[1]->active);
     }
 
-    public function testMapFromArrayWithHeadersUsingExtendItem(): void
-    {
-        $rows = [
-            ['id', 'text'],
-            ['3463', 'text'],
-            ['54754', 'text2'],
-        ];
-
-        $mapper = new SheetMapper();
-        $items = $mapper->mapFromArray($rows, ExtendItem::class);
-
-        self::assertCount(2, $items);
-        self::assertSame(3463, $items[0]->id);
-        self::assertSame('text', $items[0]->text);
-    }
-
     public function testMapsXlsxWithColumnIndexesAndDates(): void
     {
         $first = new DateTimeImmutable('2024-01-01 12:34:56');
@@ -131,19 +115,6 @@ class MapperTest extends TestCase
         $mapper->map($file, MissingColumnItem::class);
     }
 
-    public function testValidateFieldsMissingColumnThrowsExtend(): void
-    {
-        $file = $this->createCsvFile([
-            ['text', 'id', 'unknown'],
-            ['text', '456', '123'],
-        ]);
-
-        $mapper = new SheetMapper();
-        $this->expectException(SheetMapperException::class);
-        $this->expectExceptionMessage('Column index 2');
-        $mapper->map($file, ExtendItem::class);
-    }
-
     public function testValidateFieldsSkipAllowsMissingHeader(): void
     {
         $file = $this->createCsvFile([
@@ -157,6 +128,47 @@ class MapperTest extends TestCase
         self::assertCount(1, $items);
         self::assertSame('Apple', $items[0]->name);
         self::assertNull($items[0]->optional);
+    }
+
+    public function testValidateFieldsThrowsOnUnexpectedHeader(): void
+    {
+        $file = $this->createCsvFile([
+            ['Name', 'Business ID'],
+            ['Apple', '123'],
+        ]);
+
+        $mapper = new SheetMapper();
+        $this->expectException(SheetMapperException::class);
+        $this->expectExceptionMessage('Unexpected header "Business ID"');
+        $mapper->map($file, StrictHeaderItem::class);
+    }
+
+    public function testUnexpectedHeaderIsAllowedByDefault(): void
+    {
+        $file = $this->createCsvFile([
+            ['Name', 'Business ID'],
+            ['Apple', '123'],
+        ]);
+
+        $mapper = new SheetMapper();
+        $items = $mapper->map($file, DefaultHeaderItem::class);
+
+        self::assertCount(1, $items);
+        self::assertSame('Apple', $items[0]->name);
+    }
+
+    public function testValidateFieldsAllowsIgnoredUnexpectedHeader(): void
+    {
+        $file = $this->createCsvFile([
+            ['Name', 'Business ID'],
+            ['Apple', '123'],
+        ]);
+
+        $mapper = new SheetMapper();
+        $items = $mapper->map($file, IgnoreUnexpectedHeaderItem::class);
+
+        self::assertCount(1, $items);
+        self::assertSame('Apple', $items[0]->name);
     }
 
     public function testHeaderRegexpMatches(): void
@@ -370,6 +382,27 @@ class SkipHeaderItem
     public ?string $optional = null;
 }
 
+#[SheetMapping(has_header_row: true, enforce_field_mapping: true)]
+class StrictHeaderItem
+{
+    #[SheetField(header: 'Name')]
+    public string $name;
+}
+
+#[SheetMapping(has_header_row: true)]
+class DefaultHeaderItem
+{
+    #[SheetField(header: 'Name')]
+    public string $name;
+}
+
+#[SheetMapping(has_header_row: true, enforce_field_mapping: true, ignored_columns: ['Business ID'])]
+class IgnoreUnexpectedHeaderItem
+{
+    #[SheetField(header: 'Name')]
+    public string $name;
+}
+
 #[SheetMapping(has_header_row: true)]
 class RegexHeaderItem
 {
@@ -469,17 +502,4 @@ enum ItemState
 {
     case Draft;
     case Published;
-}
-
-#[SheetMapping(has_header_row: true, enforce_field_mapping: true)]
-readonly class ExtendItem extends AbstractItem
-{
-    #[SheetField(header: 'text')]
-    public string $text;
-}
-
-abstract readonly class AbstractItem
-{
-    #[SheetField(header: 'id')]
-    public int $id;
 }
