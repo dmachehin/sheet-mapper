@@ -48,6 +48,7 @@ class SchemaResolver
                 header: $header,
                 reflection_property: $property,
                 header_regexp: $header_regexp,
+                allow_merge: $attribute->allow_merge,
                 value_regexp: $value_regexp,
                 value_callback: $attribute->value_callback,
             );

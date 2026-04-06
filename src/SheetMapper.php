@@ -176,7 +176,7 @@ class SheetMapper
             if ($column_index === null) {
                 continue;
             }
-            $value = $this->readCellValue($worksheet, $row, $column_index);
+            $value = $this->readCellValue($worksheet, $row, $column_index, $field->allow_merge);
             if ($value !== null && $value !== '') {
                 return false;
             }
@@ -201,7 +201,7 @@ class SheetMapper
                 continue;
             }
 
-            $raw_value = $this->readCellValue($worksheet, $row, $column_index);
+            $raw_value = $this->readCellValue($worksheet, $row, $column_index, $field->allow_merge);
             $this->assertValueMatchesPattern($raw_value, $field);
             $processed_value = $this->applyValueCallback($raw_value, $field);
             $value = $this->castValue($processed_value, $field);
@@ -560,10 +560,19 @@ class SheetMapper
             : $field->property;
     }
 
-    private function readCellValue(Worksheet $worksheet, int $row, int $column_index): mixed
+    private function readCellValue(Worksheet $worksheet, int $row, int $column_index, bool $allow_merge = false): mixed
     {
         $coordinate = Coordinate::stringFromColumnIndex($column_index + 1) . $row;
         $cell = $worksheet->getCell($coordinate);
+
+        if ($allow_merge && $cell->isInMergeRange() && !$cell->isMergeRangeValueCell()) {
+            $merge_range = $cell->getMergeRange();
+            if (is_string($merge_range)) {
+                $ranges = Coordinate::splitRange($merge_range);
+                [$master_coordinate] = $ranges[0];
+                $cell = $worksheet->getCell($master_coordinate);
+            }
+        }
 
         return $cell?->getCalculatedValue();
     }

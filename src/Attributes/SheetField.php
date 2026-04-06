@@ -12,6 +12,7 @@ class SheetField
         public readonly ?int $column = null,
         public readonly ?string $header = null,
         public readonly ?string $header_regexp = null,
+        public readonly bool $allow_merge = false,
         public readonly ?string $value_regexp = null,
         /**
          * @var callable|null

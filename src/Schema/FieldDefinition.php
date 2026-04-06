@@ -12,6 +12,7 @@ class FieldDefinition
         public readonly ?string $header,
         public readonly ReflectionProperty $reflection_property,
         public readonly ?string $header_regexp,
+        public readonly bool $allow_merge,
         public readonly ?string $value_regexp,
         /**
          * @var callable|null

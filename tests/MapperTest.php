@@ -83,6 +83,48 @@ class MapperTest extends TestCase
         self::assertSame($second->format(DATE_ATOM), $items[1]->purchasedAt->format(DATE_ATOM));
     }
 
+    public function testMergedCellsAreIgnoredByDefault(): void
+    {
+        $file = $this->createXlsxFile(
+            [
+                ['Name', 'Amount'],
+                ['Apple', 10],
+                ['', 15],
+            ],
+            'Sheet1',
+            ['A2:A3'],
+        );
+
+        $mapper = new SheetMapper();
+        $items = $mapper->map($file, DefaultMergedValueItem::class);
+
+        self::assertCount(2, $items);
+        self::assertSame('Apple', $items[0]->name);
+        self::assertNull($items[1]->name);
+        self::assertSame(15, $items[1]->amount);
+    }
+
+    public function testMergedCellsCanBeEnabledPerField(): void
+    {
+        $file = $this->createXlsxFile(
+            [
+                ['Name', 'Amount'],
+                ['Apple', 10],
+                ['', 15],
+            ],
+            'Sheet1',
+            ['A2:A3'],
+        );
+
+        $mapper = new SheetMapper();
+        $items = $mapper->map($file, MergeEnabledValueItem::class);
+
+        self::assertCount(2, $items);
+        self::assertSame('Apple', $items[0]->name);
+        self::assertSame('Apple', $items[1]->name);
+        self::assertSame(15, $items[1]->amount);
+    }
+
     public function testMapFromArrayWithoutHeaders(): void
     {
         $first = new DateTimeImmutable('2024-01-01 12:34:56');
@@ -310,7 +352,7 @@ class MapperTest extends TestCase
     /**
      * @param list<list<int|float|string>> $rows
      */
-    private function createXlsxFile(array $rows, string $sheetName = 'Sheet1'): string
+    private function createXlsxFile(array $rows, string $sheetName = 'Sheet1', array $mergeRanges = []): string
     {
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
@@ -321,6 +363,10 @@ class MapperTest extends TestCase
                 $address = Coordinate::stringFromColumnIndex($columnIndex + 1) . ($rowIndex + 1);
                 $sheet->setCellValue($address, $value);
             }
+        }
+
+        foreach ($mergeRanges as $mergeRange) {
+            $sheet->mergeCells($mergeRange);
         }
 
         $writer = IOFactory::createWriter($spreadsheet, 'Xlsx');
@@ -363,6 +409,26 @@ class ColumnItem
 
     #[SheetField(column: 1)]
     public DateTimeImmutable $purchasedAt;
+}
+
+#[SheetMapping(target_sheet: 'Sheet1', has_header_row: true)]
+class DefaultMergedValueItem
+{
+    #[SheetField(header: 'Name')]
+    public ?string $name = null;
+
+    #[SheetField(header: 'Amount')]
+    public int $amount;
+}
+
+#[SheetMapping(target_sheet: 'Sheet1', has_header_row: true)]
+class MergeEnabledValueItem
+{
+    #[SheetField(header: 'Name', allow_merge: true)]
+    public string $name;
+
+    #[SheetField(header: 'Amount')]
+    public int $amount;
 }
 
 #[SheetMapping(has_header_row: false, enforce_field_mapping: true)]
