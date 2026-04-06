@@ -36,8 +36,9 @@ class SheetMapper
         $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($file_path);
 
         try {
-            $worksheet = $this->resolveWorksheet($spreadsheet, $schema->target_sheet);
-            return $this->mapWorksheet($worksheet, $schema);
+            return $schema->target_sheet === null
+                ? $this->mapAllWorksheets($spreadsheet, $schema)
+                : $this->mapWorksheet($this->resolveWorksheet($spreadsheet, $schema->target_sheet), $schema);
         } finally {
             $spreadsheet->disconnectWorksheets();
         }
@@ -149,6 +150,20 @@ class SheetMapper
         }
 
         return $sheet;
+    }
+
+    /**
+     * @return list<object>
+     */
+    private function mapAllWorksheets(Spreadsheet $spreadsheet, ClassSchema $schema): array
+    {
+        $result = [];
+
+        foreach ($spreadsheet->getWorksheetIterator() as $worksheet) {
+            array_push($result, ...$this->mapWorksheet($worksheet, $schema));
+        }
+
+        return $result;
     }
 
     /**

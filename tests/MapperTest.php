@@ -83,6 +83,29 @@ class MapperTest extends TestCase
         self::assertSame($second->format(DATE_ATOM), $items[1]->purchasedAt->format(DATE_ATOM));
     }
 
+    public function testMapsAllWorkbookSheetsWhenTargetSheetIsNotSpecified(): void
+    {
+        $file = $this->createMultiSheetXlsxFile([
+            'First' => [
+                ['Name', 'Amount', 'Active'],
+                ['Apple', '10.5', 'true'],
+            ],
+            'Second' => [
+                ['Name', 'Amount', 'Active'],
+                ['Pear', '7', 'false'],
+            ],
+        ]);
+
+        $mapper = new SheetMapper();
+        $items = $mapper->map($file, CsvItem::class);
+
+        self::assertCount(2, $items);
+        self::assertSame('Apple', $items[0]->name);
+        self::assertSame('Pear', $items[1]->name);
+        self::assertTrue($items[0]->active);
+        self::assertFalse($items[1]->active);
+    }
+
     public function testMergedCellsAreIgnoredByDefault(): void
     {
         $file = $this->createXlsxFile(
@@ -393,6 +416,39 @@ class MapperTest extends TestCase
 
         foreach ($mergeRanges as $mergeRange) {
             $sheet->mergeCells($mergeRange);
+        }
+
+        $writer = IOFactory::createWriter($spreadsheet, 'Xlsx');
+        $file = $this->tempFilePath('xlsx');
+        $writer->save($file);
+        $spreadsheet->disconnectWorksheets();
+
+        return $file;
+    }
+
+    /**
+     * @param array<string, list<list<int|float|string>>> $sheets
+     */
+    private function createMultiSheetXlsxFile(array $sheets): string
+    {
+        $spreadsheet = new Spreadsheet();
+        $sheet_index = 0;
+
+        foreach ($sheets as $sheet_name => $rows) {
+            $sheet = $sheet_index === 0
+                ? $spreadsheet->getActiveSheet()
+                : $spreadsheet->createSheet();
+
+            $sheet->setTitle($sheet_name);
+
+            foreach ($rows as $rowIndex => $row) {
+                foreach ($row as $columnIndex => $value) {
+                    $address = Coordinate::stringFromColumnIndex($columnIndex + 1) . ($rowIndex + 1);
+                    $sheet->setCellValue($address, $value);
+                }
+            }
+
+            $sheet_index++;
         }
 
         $writer = IOFactory::createWriter($spreadsheet, 'Xlsx');
