@@ -91,10 +91,21 @@ class SheetMapper
                 continue;
             }
 
-            $result[] = $this->hydrateObject($worksheet, $row, $schema, $header_data);
+            try {
+                $result[] = $this->hydrateObject($worksheet, $row, $schema, $header_data);
+            } catch (SheetMapperException $exception) {
+                throw $this->withRowContext($exception, $row);
+            }
         }
 
         return $result;
+    }
+
+    private function withRowContext(SheetMapperException $exception, int $row): SheetMapperException
+    {
+        $message = sprintf('Row %d: %s', $row, $exception->getMessage());
+
+        return new SheetMapperException($message, previous: $exception);
     }
 
     /**

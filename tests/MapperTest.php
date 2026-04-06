@@ -287,6 +287,32 @@ class MapperTest extends TestCase
         $mapper->map($file, ValueRegexItem::class);
     }
 
+    public function testNotNullableEmptyCellErrorContainsRowNumber(): void
+    {
+        $file = $this->createCsvFile([
+            ['Name', 'Amount', 'Active'],
+            ['Apple', '', 'true'],
+        ]);
+
+        $mapper = new SheetMapper();
+        $this->expectException(SheetMapperException::class);
+        $this->expectExceptionMessage('Row 2: Field "amount" is not nullable but cell is empty.');
+        $mapper->map($file, CsvItem::class);
+    }
+
+    public function testValuePatternErrorContainsRowNumber(): void
+    {
+        $file = $this->createCsvFile([
+            ['Code'],
+            ['invalid'],
+        ]);
+
+        $mapper = new SheetMapper();
+        $this->expectException(SheetMapperException::class);
+        $this->expectExceptionMessage('Row 2: Value "invalid" for field "code" does not match pattern "/^[A-Z]{3}-\d{3}$/".');
+        $mapper->map($file, ValueRegexItem::class);
+    }
+
     public function testValueCallbackTransformsValues(): void
     {
         $rows = [
